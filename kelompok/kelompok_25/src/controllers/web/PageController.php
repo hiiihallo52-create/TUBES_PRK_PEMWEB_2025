@@ -30,7 +30,7 @@ class PageController extends Controller
 
     public function suppliers()
     {
-        $this->renderPlaceholder('Data Supplier', 'Informasi supplier akan hadir di halaman ini.');
+        $this->view('suppliers/index', ['title' => 'Data Supplier']);
     }
 
     public function categories()
