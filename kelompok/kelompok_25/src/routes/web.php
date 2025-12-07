@@ -58,7 +58,20 @@ $router->get('/reports/export-excel', function() {
     $controller = new ReportController();
     $controller->exportExcel();
 });
-$router->get('/reports/transactions', 'web/PageController@reportsTransactions');
+$router->get('/reports/transactions', function() {
+    AuthMiddleware::check();
+    require_once ROOT_PATH . '/models/Transaction.php';
+    require_once ROOT_PATH . '/controllers/web/TransactionController.php';
+    $controller = new TransactionController();
+    $controller->report();
+});
+$router->get('/reports/transactions/export', function() {
+    AuthMiddleware::check();
+    require_once ROOT_PATH . '/models/Transaction.php';
+    require_once ROOT_PATH . '/controllers/web/TransactionController.php';
+    $controller = new TransactionController();
+    $controller->exportCSV();
+});
 $router->get('/reports/low-stock', 'web/PageController@reportsLowStock');
 $router->get('/roles', 'web/PageController@roles');
 $router->get('/profile', 'web/PageController@profile');
