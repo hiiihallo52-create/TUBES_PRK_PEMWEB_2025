@@ -11,6 +11,14 @@ $router->post('/api/auth/logout', 'api/AuthApiController@logout');
 $router->get('/api/auth/me', 'api/AuthApiController@me');
 $router->get('/api/auth/check', 'api/AuthApiController@check');
 
+// Supplier API routes
+$router->get('/api/suppliers', 'api/SupplierApiController@index');
+$router->get('/api/suppliers/search', 'api/SupplierApiController@search');
+$router->get('/api/suppliers/{id}', 'api/SupplierApiController@show');
+$router->post('/api/suppliers', 'api/SupplierApiController@store');
+$router->post('/api/suppliers/{id}', 'api/SupplierApiController@update');
+$router->post('/api/suppliers/{id}/delete', 'api/SupplierApiController@destroy');
+
 // Materials API routes
 $router->get('/api/materials', function() {
     AuthMiddleware::check();
