@@ -29,22 +29,21 @@ class SupplierApiController extends Controller
             $total = $supplier->countActive();
             $lastPage = ceil($total / $perPage);
 
+            // Format: Match category response format for consistent AJAX handling
             $data = [
-                'suppliers' => $suppliers,
-                'pagination' => [
-                    'current_page' => $page,
-                    'per_page' => $perPage,
-                    'total' => $total,
-                    'last_page' => $lastPage
-                ]
+                'data' => $suppliers,
+                'current_page' => $page,
+                'per_page' => $perPage,
+                'total' => $total,
+                'last_page' => $lastPage
             ];
 
             // Log activity
             $this->logActivity('view', 'supplier', 0, 'Viewed supplier list');
 
-            Response::success('Suppliers retrieved successfully', $data);
+            Response::success('Data supplier berhasil diambil', $data);
         } catch (Exception $e) {
-            Response::error('Failed to retrieve suppliers', ['error' => $e->getMessage()], 500);
+            Response::error('Gagal mengambil data supplier', ['error' => $e->getMessage()], 500);
         }
     }
 
@@ -61,14 +60,14 @@ class SupplierApiController extends Controller
             $supplier = new Supplier();
             
             if (!$supplier->exists($id)) {
-                Response::notFound('Supplier not found');
+                Response::notFound('Supplier tidak ditemukan');
             }
 
-            $supplierData = $supplier->findWithMaterialCount($id);
+            $supplierData = $supplier->findActive($id);
 
-            Response::success('Supplier retrieved successfully', ['supplier' => $supplierData]);
+            Response::success('Data supplier berhasil diambil', ['data' => $supplierData]);
         } catch (Exception $e) {
-            Response::error('Failed to retrieve supplier', ['error' => $e->getMessage()], 500);
+            Response::error('Gagal mengambil data supplier', ['error' => $e->getMessage()], 500);
         }
     }
 
@@ -79,49 +78,43 @@ class SupplierApiController extends Controller
     public function store()
     {
         try {
-            AuthMiddleware::check();
-            RoleMiddleware::staff();
+            // Get JSON input
+            $input = json_decode(file_get_contents('php://input'), true);
 
-            $input = $this->getJsonInput();
-
-            // Validate input
-            $rules = [
-                'name' => 'required|min:3|max:255',
-                'contact_person' => 'max:100',
-                'phone' => 'max:50',
-                'email' => 'email|max:255',
-                'address' => 'max:500'
-            ];
-
-            $validator = new Validator($input, $rules);
-            if (!$validator->validate()) {
-                Response::validationError($validator->errors(), 'Validation failed');
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                Response::error('Format JSON tidak valid', [], 400);
             }
 
+            // Validate input
+            $validator = Validator::make($input, [
+                'name' => 'required|min:3|max:255',
+                'contact_person' => 'required|min:2|max:100',
+                'phone' => 'required|min:8|max:50',
+                'email' => 'email|max:255',
+                'address' => 'max:500'
+            ]);
+
+            if (!$validator->validate()) {
+                Response::validationError($validator->errors(), 'Validasi gagal');
+            }
+
+            $validated = $validator->validated();
             $supplier = new Supplier();
 
             // Check if email already exists
-            if (!empty($input['email']) && $supplier->emailExists($input['email'])) {
-                Response::error('Email already exists', ['email' => ['Email sudah terdaftar.']], 422);
+            if (!empty($validated['email']) && $supplier->emailExists($validated['email'])) {
+                Response::error('Email sudah terdaftar', [
+                    'email' => ['Email sudah digunakan']
+                ], 422);
             }
 
-            // Prepare data
-            $data = [
-                'name' => trim($input['name']),
-                'contact_person' => trim($input['contact_person'] ?? ''),
-                'phone' => trim($input['phone'] ?? ''),
-                'email' => trim($input['email'] ?? ''),
-                'address' => trim($input['address'] ?? ''),
-                'is_active' => isset($input['is_active']) ? (bool) $input['is_active'] : true
-            ];
-
             // Create supplier
-            $supplierId = $supplier->create($data);
-            $newSupplier = $supplier->find($supplierId);
+            $supplierId = $supplier->create($validated);
+            $newSupplier = $supplier->findActive($supplierId);
 
-            Response::created('Supplier created successfully', ['supplier' => $newSupplier]);
+            Response::created('Supplier berhasil ditambahkan', ['data' => $newSupplier]);
         } catch (Exception $e) {
-            Response::error('Failed to create supplier', ['error' => $e->getMessage()], 500);
+            Response::error('Gagal menambahkan supplier', [], 500);
         }
     }
 
@@ -132,71 +125,49 @@ class SupplierApiController extends Controller
     public function update($id)
     {
         try {
-            AuthMiddleware::check();
-            RoleMiddleware::staff();
-
             $id = intval($id);
             $supplier = new Supplier();
 
             if (!$supplier->exists($id)) {
-                Response::notFound('Supplier not found');
+                Response::notFound('Supplier tidak ditemukan');
             }
 
-            $input = $this->getJsonInput();
+            // Get JSON input
+            $input = json_decode(file_get_contents('php://input'), true);
+
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                Response::error('Format JSON tidak valid', [], 400);
+            }
 
             // Validate input (all optional on update)
-            $rules = [
+            $validator = Validator::make($input, [
                 'name' => 'min:3|max:255',
-                'contact_person' => 'max:100',
-                'phone' => 'max:50',
+                'contact_person' => 'min:2|max:100',
+                'phone' => 'min:8|max:50',
                 'email' => 'email|max:255',
                 'address' => 'max:500'
-            ];
+            ]);
 
-            $validator = new Validator($input, $rules);
             if (!$validator->validate()) {
-                Response::validationError($validator->errors(), 'Validation failed');
+                Response::validationError($validator->errors(), 'Validasi gagal');
             }
+
+            $validated = $validator->validated();
 
             // Check if email already exists (exclude current supplier)
-            if (!empty($input['email']) && $supplier->emailExists($input['email'], $id)) {
-                Response::error('Email already exists', ['email' => ['Email sudah terdaftar.']], 422);
-            }
-
-            // Prepare update data (only non-empty fields)
-            $data = [];
-            
-            if (isset($input['name']) && !empty($input['name'])) {
-                $data['name'] = trim($input['name']);
-            }
-            
-            if (isset($input['contact_person'])) {
-                $data['contact_person'] = trim($input['contact_person']);
-            }
-            
-            if (isset($input['phone'])) {
-                $data['phone'] = trim($input['phone']);
-            }
-            
-            if (isset($input['email'])) {
-                $data['email'] = trim($input['email']);
-            }
-            
-            if (isset($input['address'])) {
-                $data['address'] = trim($input['address']);
-            }
-            
-            if (isset($input['is_active'])) {
-                $data['is_active'] = (bool) $input['is_active'];
+            if (!empty($validated['email']) && $supplier->emailExists($validated['email'], $id)) {
+                Response::error('Email sudah terdaftar', [
+                    'email' => ['Email sudah digunakan']
+                ], 422);
             }
 
             // Update supplier
-            $supplier->updateSupplier($id, $data);
-            $updatedSupplier = $supplier->find($id);
+            $supplier->updateSupplier($id, $validated);
+            $updatedSupplier = $supplier->findActive($id);
 
-            Response::success('Supplier updated successfully', ['supplier' => $updatedSupplier]);
+            Response::success('Supplier berhasil diperbarui', ['data' => $updatedSupplier]);
         } catch (Exception $e) {
-            Response::error('Failed to update supplier', ['error' => $e->getMessage()], 500);
+            Response::error('Gagal memperbarui supplier', [], 500);
         }
     }
 
@@ -208,31 +179,20 @@ class SupplierApiController extends Controller
     {
         try {
             AuthMiddleware::check();
-            RoleMiddleware::manager();
 
             $id = intval($id);
             $supplier = new Supplier();
 
             if (!$supplier->exists($id)) {
-                Response::notFound('Supplier not found');
-            }
-
-            // Check if supplier is used in materials
-            $supplierData = $supplier->findWithMaterialCount($id);
-            if ($supplierData->material_count > 0) {
-                Response::error(
-                    'Cannot delete supplier',
-                    ['error' => 'Supplier is used in ' . $supplierData->material_count . ' material(s).'],
-                    409
-                );
+                Response::notFound('Supplier tidak ditemukan');
             }
 
             // Soft delete supplier
             $supplier->softDelete($id);
 
-            Response::success('Supplier deleted successfully', []);
+            Response::success('Supplier berhasil dihapus', []);
         } catch (Exception $e) {
-            Response::error('Failed to delete supplier', ['error' => $e->getMessage()], 500);
+            Response::error('Gagal menghapus supplier', ['error' => $e->getMessage()], 500);
         }
     }
 
@@ -245,44 +205,41 @@ class SupplierApiController extends Controller
         try {
             AuthMiddleware::check();
 
-            $query = $_GET['q'] ?? '';
+            $query = $_GET['search'] ?? '';
             $page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
             $perPage = isset($_GET['per_page']) ? min(100, intval($_GET['per_page'])) : 10;
 
-            if (strlen($query) < 2) {
-                Response::error('Search query must be at least 2 characters', [], 400);
-            }
-
             $supplier = new Supplier();
-            $suppliers = $supplier->search($query, $page, $perPage);
-            $total = $supplier->searchCount($query);
+            
+            if (!$query) {
+                // If no search query, return all active suppliers
+                $suppliers = $supplier->getAllActive($page, $perPage);
+                $total = $supplier->countActive();
+            } else {
+                // Search suppliers
+                if (strlen($query) < 2) {
+                    Response::error('Query pencarian minimal 2 karakter', [], 400);
+                }
+                $suppliers = $supplier->search($query, $page, $perPage);
+                $total = $supplier->searchCount($query);
+            }
+            
             $lastPage = ceil($total / $perPage);
 
             $data = [
-                'suppliers' => $suppliers,
-                'pagination' => [
-                    'current_page' => $page,
-                    'per_page' => $perPage,
-                    'total' => $total,
-                    'last_page' => $lastPage
-                ],
-                'query' => $query
+                'data' => $suppliers,
+                'current_page' => $page,
+                'per_page' => $perPage,
+                'total' => $total,
+                'last_page' => $lastPage
             ];
 
-            Response::success('Search completed successfully', $data);
+            Response::success('Data supplier berhasil diambil', $data);
         } catch (Exception $e) {
-            Response::error('Search failed', ['error' => $e->getMessage()], 500);
+            Response::error('Gagal mengambil data supplier', ['error' => $e->getMessage()], 500);
         }
     }
 
-    /**
-     * Get helper to retrieve JSON input
-     */
-    private function getJsonInput()
-    {
-        $input = file_get_contents('php://input');
-        return json_decode($input, true) ?? [];
-    }
 
     /**
      * Log activity
