@@ -71,9 +71,9 @@ if (!Auth::check() && isset($_COOKIE['remember_token'])) {
 // Initialize router
 $router = new Router();
 
-// Load routes
-require_once ROOT_PATH . '/routes/web.php';
+// Load routes - API routes first to prevent web routes from catching them
 require_once ROOT_PATH . '/routes/api.php';
+require_once ROOT_PATH . '/routes/web.php';
 
 // Set 404 handler
 $router->notFound(function() {
