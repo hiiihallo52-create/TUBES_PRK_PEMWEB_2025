@@ -50,7 +50,7 @@ class PageController extends Controller
 
     public function stockAdjustments()
     {
-        $this->renderPlaceholder('Penyesuaian Stok', 'Fitur penyesuaian stok akan segera hadir.');
+        $this->view('stock-adjustments/index', ['title' => 'Penyesuaian Stok']);
     }
 
     public function reportsStock()

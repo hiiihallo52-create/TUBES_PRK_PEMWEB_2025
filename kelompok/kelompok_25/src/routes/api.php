@@ -58,17 +58,23 @@ $router->post('/api/stock-in', 'api/StockInApiController@store');
 $router->post('/api/stock-in/{id}', 'api/StockInApiController@update');
 $router->post('/api/stock-in/{id}/delete', 'api/StockInApiController@destroy');
 
-// Stock Out API routes (placeholder)
-$router->get('/api/stock-out', function() {
-    AuthMiddleware::check();
-    Response::success('Stock out endpoint', []);
-});
+// Stock Adjustment API routes
+$router->get('/api/stock-adjustments', 'api/StockAdjustmentApiController@index');
+$router->get('/api/stock-adjustments/stats', 'api/StockAdjustmentApiController@stats');
+$router->get('/api/stock-adjustments/report', 'api/StockAdjustmentApiController@report');
+$router->get('/api/stock-adjustments/material/{id}', 'api/StockAdjustmentApiController@material');
+$router->get('/api/stock-adjustments/reason/{reason}', 'api/StockAdjustmentApiController@reason');
+$router->get('/api/stock-adjustments/{id}', 'api/StockAdjustmentApiController@show');
+$router->post('/api/stock-adjustments', 'api/StockAdjustmentApiController@store');
 
-$router->post('/api/stock-out', function() {
-    AuthMiddleware::check();
-    RoleMiddleware::staff();
-    Response::success('Stock out endpoint', []);
-});
+// Stock Out API routes
+$router->get('/api/stock-out', 'api/StockOutApiController@index');
+$router->get('/api/stock-out/stats', 'api/StockOutApiController@stats');
+$router->get('/api/stock-out/report', 'api/StockOutApiController@report');
+$router->get('/api/stock-out/material/{id}', 'api/StockOutApiController@material');
+$router->get('/api/stock-out/usage/{type}', 'api/StockOutApiController@usage');
+$router->get('/api/stock-out/{id}', 'api/StockOutApiController@show');
+$router->post('/api/stock-out', 'api/StockOutApiController@store');
 
 // Reports API routes
 $router->get('/api/reports/stock', function() {

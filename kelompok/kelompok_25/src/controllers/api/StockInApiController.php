@@ -5,14 +5,25 @@
  * Menangani endpoint API untuk transaksi stok masuk
  */
 
-class StockInApiController
+require_once ROOT_PATH . '/config/database.php';
+require_once ROOT_PATH . '/middleware/AuthMiddleware.php';
+require_once ROOT_PATH . '/core/Controller.php';
+require_once ROOT_PATH . '/core/Response.php';
+require_once ROOT_PATH . '/models/StockIn.php';
+require_once ROOT_PATH . '/models/Material.php';
+require_once ROOT_PATH . '/models/Supplier.php';
+
+class StockInApiController extends Controller
 {
+    private $db;
     private $stockInModel;
     private $materialModel;
     private $supplierModel;
 
     public function __construct()
     {
+        AuthMiddleware::check();
+        $this->db = Database::getInstance()->getConnection();
         $this->stockInModel = new StockIn();
         $this->materialModel = new Material();
         $this->supplierModel = new Supplier();

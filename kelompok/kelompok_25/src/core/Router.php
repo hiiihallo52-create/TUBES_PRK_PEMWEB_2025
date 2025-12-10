@@ -58,10 +58,10 @@ class Router
             $requestUri = substr($requestUri, 0, $pos);
         }
 
-        // Remove base path
-        $basePath = '/TUBES_PRK_PEMWEB_2025/kelompok/kelompok_25/src/public';
-        if (strpos($requestUri, $basePath) === 0) {
-            $requestUri = substr($requestUri, strlen($basePath));
+        // Remove base path - auto detect based on SCRIPT_NAME
+        $scriptName = dirname($_SERVER['SCRIPT_NAME']);
+        if ($scriptName !== '/' && strpos($requestUri, $scriptName) === 0) {
+            $requestUri = substr($requestUri, strlen($scriptName));
         }
 
         // Ensure leading slash

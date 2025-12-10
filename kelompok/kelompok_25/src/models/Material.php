@@ -220,4 +220,34 @@ class Material extends Model {
         $result = $stmt->fetch(PDO::FETCH_ASSOC);
         return $result['total'] ?? 0;
     }
+
+    /**
+     * Get current stock of a material
+     */
+    public function getCurrentStock($materialId)
+    {
+        $sql = "SELECT current_stock FROM {$this->table} WHERE id = ? LIMIT 1";
+        $stmt = $this->query($sql, [$materialId]);
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $result ? (float)$result['current_stock'] : 0;
+    }
+
+    /**
+     * Update material stock
+     * @param int $materialId
+     * @param float $quantity
+     * @param string $operation 'add' or 'subtract'
+     * @return bool
+     */
+    public function updateStock($materialId, $quantity, $operation = 'add')
+    {
+        if ($operation === 'add') {
+            $sql = "UPDATE {$this->table} SET current_stock = current_stock + ? WHERE id = ?";
+        } else {
+            $sql = "UPDATE {$this->table} SET current_stock = current_stock - ? WHERE id = ?";
+        }
+        
+        $stmt = $this->query($sql, [$quantity, $materialId]);
+        return $stmt->rowCount() > 0;
+    }
 }

@@ -1,185 +1,249 @@
 <?php
-// api/StockOutApiController.php
-// usage: include routing to point to methods below.
-// Requires: Database::connect() returning PDO, session auth
 
-require_once __DIR__ . '/../models/StockOut.php';
+/**
+ * Stock Out API Controller
+ * Handle API requests untuk Stock Out Management
+ */
 
-class StockOutApiController
+require_once ROOT_PATH . '/core/Controller.php';
+require_once ROOT_PATH . '/core/Response.php';
+require_once ROOT_PATH . '/core/Auth.php';
+require_once ROOT_PATH . '/config/database.php';
+require_once ROOT_PATH . '/middleware/AuthMiddleware.php';
+require_once ROOT_PATH . '/models/StockOut.php';
+
+class StockOutApiController extends Controller
 {
-    protected PDO $db;
-    protected StockOut $model;
+    private $model;
+    private $db;
 
     public function __construct()
     {
-        $this->db = Database::connect();
+        AuthMiddleware::check();
+        
+        $this->db = Database::getInstance()->getConnection();
         $this->model = new StockOut($this->db);
-        // set JSON header in each response method or globally in router
-        header('Content-Type: application/json; charset=utf-8');
-    }
-
-    protected function json($data, int $status = 200)
-    {
-        http_response_code($status);
-        echo json_encode($data, JSON_UNESCAPED_UNICODE);
-        exit;
-    }
-
-    protected function getRequestBody(): array
-    {
-        $raw = file_get_contents('php://input');
-        $data = json_decode($raw, true);
-        if (!is_array($data)) {
-            return [];
-        }
-        return $data;
-    }
-
-    protected function ensureAuthenticated()
-    {
-        session_start();
-        if (empty($_SESSION['user_id'])) {
-            $this->json(['error' => 'Unauthorized'], 401);
-        }
-        return (int)$_SESSION['user_id'];
     }
 
     /**
      * GET /api/stock-out
-     * supports query params: page, perPage, material_id, usage_type, start_date, end_date, q
+     * List all stock out transactions
      */
     public function index()
     {
-        $this->ensureAuthenticated();
-        $page = max(1, (int)($_GET['page'] ?? 1));
-        $perPage = min(100, max(1, (int)($_GET['perPage'] ?? 20)));
-        $filters = [
-            'material_id' => isset($_GET['material_id']) ? (int)$_GET['material_id'] : null,
-            'usage_type' => $_GET['usage_type'] ?? null,
-            'start_date' => $_GET['start_date'] ?? null,
-            'end_date' => $_GET['end_date'] ?? null,
-            'q' => $_GET['q'] ?? null
-        ];
-
         try {
+            $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+            $perPage = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 20;
+            
+            if ($page < 1) $page = 1;
+            if ($perPage < 1 || $perPage > 100) $perPage = 20;
+
+            $filters = [
+                'material_id' => isset($_GET['material_id']) ? (int)$_GET['material_id'] : null,
+                'usage_type' => $_GET['usage_type'] ?? null,
+                'start_date' => $_GET['start_date'] ?? null,
+                'end_date' => $_GET['end_date'] ?? null,
+                'q' => $_GET['q'] ?? null
+            ];
+
             $result = $this->model->getAll($page, $perPage, $filters);
-            $this->json(['status' => true, 'data' => $result]);
+
+            Response::success('Data stock out berhasil diambil', $result);
+
         } catch (Exception $e) {
-            $this->json(['status' => false, 'error' => $e->getMessage()], 500);
+            Response::error('Gagal mengambil data stock out', [], 500);
         }
     }
 
     /**
-     * GET /api/stock-out/{id}
+     * GET /api/stock-out/:id
+     * Get stock out detail
      */
     public function show($id)
     {
-        $this->ensureAuthenticated();
         try {
-            $row = $this->model->findById((int)$id);
-            if (!$row) $this->json(['status' => false, 'error' => 'Not found'], 404);
-            $this->json(['status' => true, 'data' => $row]);
+            if (!is_numeric($id) || $id < 1) {
+                Response::error('ID tidak valid', [], 400);
+                return;
+            }
+
+            $stockOut = $this->model->findById($id);
+
+            if (!$stockOut) {
+                Response::notFound('Stock out tidak ditemukan');
+                return;
+            }
+
+            Response::success('Detail stock out', ['data' => $stockOut]);
+
         } catch (Exception $e) {
-            $this->json(['status' => false, 'error' => $e->getMessage()], 500);
+            Response::error('Gagal mengambil detail', [], 500);
         }
     }
 
     /**
      * POST /api/stock-out
-     * body: JSON with material_id, quantity, usage_type, transaction_date, destination (opt), notes (opt)
+     * Create new stock out transaction
      */
     public function store()
     {
-        $userId = $this->ensureAuthenticated();
-        $input = $this->getRequestBody();
-
-        // map/whitelist fields
-        $payload = [
-            'material_id' => isset($input['material_id']) ? (int)$input['material_id'] : null,
-            'quantity' => isset($input['quantity']) ? (float)$input['quantity'] : null,
-            'usage_type' => $input['usage_type'] ?? null,
-            'transaction_date' => $input['transaction_date'] ?? null,
-            'destination' => $input['destination'] ?? null,
-            'notes' => $input['notes'] ?? null,
-            'created_by' => $userId
-        ];
-
         try {
-            $created = $this->model->create($payload);
-            $this->json(['status' => true, 'data' => $created], 201);
+            $input = json_decode(file_get_contents('php://input'), true);
+
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                Response::error('Invalid JSON format', [], 400);
+                return;
+            }
+
+            $userId = Auth::id();
+
+            $payload = [
+                'material_id' => isset($input['material_id']) ? (int)$input['material_id'] : null,
+                'quantity' => isset($input['quantity']) ? (float)$input['quantity'] : null,
+                'usage_type' => $input['usage_type'] ?? null,
+                'transaction_date' => $input['transaction_date'] ?? date('Y-m-d'),
+                'destination' => $input['destination'] ?? null,
+                'notes' => $input['notes'] ?? null,
+                'created_by' => $userId
+            ];
+
+            $stockOut = $this->model->create($payload);
+
+            // Log activity
+            $this->logActivity('CREATE', 'stock_out', $stockOut['id'], 
+                "Created stock out {$stockOut['reference_number']} for material ID {$input['material_id']}");
+
+            Response::created('Stock out berhasil dibuat', $stockOut);
+
         } catch (Exception $e) {
-            $this->json(['status' => false, 'error' => $e->getMessage()], 400);
+            Response::error('Gagal membuat stock out: ' . $e->getMessage(), [], 400);
         }
     }
 
     /**
-     * GET /api/stock-out/material/{id}
+     * GET /api/stock-out/material/:id
+     * Get stock out by material
      */
     public function material($materialId)
     {
-        $this->ensureAuthenticated();
-        $start = $_GET['start_date'] ?? null;
-        $end = $_GET['end_date'] ?? null;
         try {
-            $rows = $this->model->getByMaterial((int)$materialId, ['start' => $start, 'end' => $end]);
-            $this->json(['status' => true, 'data' => $rows]);
+            $materialId = (int)$materialId;
+            $start = $_GET['start_date'] ?? null;
+            $end = $_GET['end_date'] ?? null;
+            
+            $dateRange = null;
+            if ($start && $end) {
+                $dateRange = ['start' => $start, 'end' => $end];
+            }
+
+            $stockOuts = $this->model->getByMaterial($materialId, $dateRange);
+
+            Response::success('Data stock out berhasil diambil', ['data' => $stockOuts]);
+
         } catch (Exception $e) {
-            $this->json(['status' => false, 'error' => $e->getMessage()], 400);
+            Response::error('Gagal mengambil data', [], 400);
         }
     }
 
     /**
-     * GET /api/stock-out/usage/{type}
+     * GET /api/stock-out/usage/:type
+     * Get stock out by usage type
      */
     public function usage($type)
     {
-        $this->ensureAuthenticated();
-        $start = $_GET['start_date'] ?? null;
-        $end = $_GET['end_date'] ?? null;
         try {
-            $rows = $this->model->getByUsageType($type, ['start' => $start, 'end' => $end]);
-            $this->json(['status' => true, 'data' => $rows]);
+            $start = $_GET['start_date'] ?? null;
+            $end = $_GET['end_date'] ?? null;
+            
+            $dateRange = null;
+            if ($start && $end) {
+                $dateRange = ['start' => $start, 'end' => $end];
+            }
+
+            $stockOuts = $this->model->getByUsageType($type, $dateRange);
+
+            Response::success('Data stock out berhasil diambil', ['data' => $stockOuts]);
+
         } catch (Exception $e) {
-            $this->json(['status' => false, 'error' => $e->getMessage()], 400);
+            Response::error('Gagal mengambil data', [], 400);
         }
     }
 
     /**
-     * GET /api/stock-out/report?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD
-     */
-    public function report()
-    {
-        $this->ensureAuthenticated();
-        $start = $_GET['start_date'] ?? null;
-        $end = $_GET['end_date'] ?? null;
-        if (!$start || !$end) {
-            $this->json(['status' => false, 'error' => 'start_date and end_date required'], 400);
-        }
-        try {
-            $rows = $this->model->getByDateRange($start, $end);
-            $this->json(['status' => true, 'data' => $rows]);
-        } catch (Exception $e) {
-            $this->json(['status' => false, 'error' => $e->getMessage()], 500);
-        }
-    }
-
-    /**
-     * GET /api/stock-out/stats?start_date=&end_date=
+     * GET /api/stock-out/stats
+     * Get statistics
      */
     public function stats()
     {
-        $this->ensureAuthenticated();
-        $start = $_GET['start_date'] ?? null;
-        $end = $_GET['end_date'] ?? null;
-        $range = null;
-        if ($start && $end) {
-            $range = ['start' => $start, 'end' => $end];
-        }
         try {
-            $stats = $this->model->getStats($range);
-            $this->json(['status' => true, 'data' => $stats]);
+            $start = $_GET['start_date'] ?? null;
+            $end = $_GET['end_date'] ?? null;
+            
+            $dateRange = null;
+            if ($start && $end) {
+                $dateRange = ['start' => $start, 'end' => $end];
+            }
+
+            $stats = $this->model->getStats($dateRange);
+
+            Response::success('Statistik stock out', ['data' => $stats]);
+
         } catch (Exception $e) {
-            $this->json(['status' => false, 'error' => $e->getMessage()], 500);
+            Response::error('Gagal mengambil statistik', [], 500);
+        }
+    }
+
+    /**
+     * GET /api/stock-out/report
+     * Get report for date range
+     */
+    public function report()
+    {
+        try {
+            $start = $_GET['start_date'] ?? null;
+            $end = $_GET['end_date'] ?? null;
+
+            if (!$start || !$end) {
+                Response::error('start_date dan end_date wajib diisi', [], 400);
+                return;
+            }
+
+            $stockOuts = $this->model->getByDateRange($start, $end);
+
+            Response::success('Laporan stock out', [
+                'data' => $stockOuts,
+                'period' => ['start' => $start, 'end' => $end],
+                'total' => count($stockOuts)
+            ]);
+
+        } catch (Exception $e) {
+            Response::error('Gagal mengambil laporan', [], 500);
+        }
+    }
+
+    /**
+     * Log activity helper
+     */
+    private function logActivity($action, $entityType, $entityId, $description)
+    {
+        try {
+            $stmt = $this->db->prepare("
+                INSERT INTO activity_logs 
+                (user_id, action, entity_type, entity_id, description, ip_address, user_agent, created_at) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
+            ");
+            
+            $stmt->execute([
+                Auth::id(),
+                $action,
+                $entityType,
+                $entityId,
+                $description,
+                $_SERVER['REMOTE_ADDR'] ?? null,
+                $_SERVER['HTTP_USER_AGENT'] ?? null
+            ]);
+        } catch (Exception $e) {
+            // Silent fail
         }
     }
 }
