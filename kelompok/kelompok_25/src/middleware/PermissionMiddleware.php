@@ -1,0 +1,75 @@
+<?php
+
+/**
+ * Permission Middleware
+ * Check if user has required permission(s) to access a route
+ * 
+ * @requires helpers/functions.php (loaded in index.php)
+ * Functions used: is_logged_in(), has_permission(), redirect_to(), url()
+ */
+class PermissionMiddleware
+{
+    /**
+     * Handle permission check
+     * @param string|array $permissions Single permission or array of permissions (OR logic)
+     */
+    public static function handle($permissions)
+    {
+        if (!is_logged_in()) {
+            redirect_to('/login');
+            exit;
+        }
+
+        // Convert single permission to array
+        if (!is_array($permissions)) {
+            $permissions = [$permissions];
+        }
+
+        // Check if user has any of the required permissions
+        $hasPermission = false;
+        foreach ($permissions as $permission) {
+            if (has_permission($permission)) {
+                $hasPermission = true;
+                break;
+            }
+        }
+
+        if (!$hasPermission) {
+            // Set flash message
+            $_SESSION['flash_error'] = 'Anda tidak memiliki akses untuk halaman ini.';
+            
+            // Redirect to dashboard or previous page
+            $previousUrl = $_SERVER['HTTP_REFERER'] ?? url('/dashboard');
+            redirect_to($previousUrl);
+            exit;
+        }
+
+        return true;
+    }
+
+    /**
+     * Check if user has ALL specified permissions (AND logic)
+     */
+    public static function requireAll($permissions)
+    {
+        if (!is_logged_in()) {
+            redirect_to('/login');
+            exit;
+        }
+
+        if (!is_array($permissions)) {
+            $permissions = [$permissions];
+        }
+
+        foreach ($permissions as $permission) {
+            if (!has_permission($permission)) {
+                $_SESSION['flash_error'] = 'Anda tidak memiliki akses untuk halaman ini.';
+                $previousUrl = $_SERVER['HTTP_REFERER'] ?? url('/dashboard');
+                redirect_to($previousUrl);
+                exit;
+            }
+        }
+
+        return true;
+    }
+}
